@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/coonlink">
-    <img width="90px" src="https://raw.coonlink.com/cloud/Chill%20with%20You%20Lo-Fi%20Story.png" alt="Logo" />
+    <img width="90px" src="logo.png" alt="Logo" />
   </a>
   <h1>Chill with You : Lo-Fi Story — Мод «Радио»</h1>
 
