@@ -61,7 +61,7 @@
    - Windows: `Chill with You Lo-Fi Story/BepInEx/`
    - Steam Deck / Linux (flatpak):
      `~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/Chill with You Lo-Fi Story/BepInEx/`
-3. Скопируйте **все файлы** из этого репозитория в папку **plugins**:
+3. Скопируйте **все файлы** из скачанного релизного zip в папку **plugins**:
    ```
    BepInEx/plugins/RadioStreamPlugin.dll     ← сам мод
    BepInEx/plugins/NLayer.dll                ← декодер MP3 (обязателен)
