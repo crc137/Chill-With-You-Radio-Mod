@@ -31,7 +31,7 @@ namespace RadioStreamPlugin
         }
     }
 
-    [BepInPlugin("com.radio.streamplugin", "Radio Stream Plugin", "26.1.2")]
+    [BepInPlugin("com.radio.streamplugin", "Radio Stream Plugin", "26.1.3")]
     public class RadioPlugin : BaseUnityPlugin
     {
         private void Awake()
