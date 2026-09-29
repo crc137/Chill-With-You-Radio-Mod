@@ -31,7 +31,7 @@ namespace RadioStreamPlugin
         }
     }
 
-    [BepInPlugin("com.radio.streamplugin", "Radio Stream Plugin", "26.1.1")]
+    [BepInPlugin("com.radio.streamplugin", "Radio Stream Plugin", "26.1.2")]
     public class RadioPlugin : BaseUnityPlugin
     {
         private void Awake()
@@ -247,8 +247,6 @@ namespace RadioStreamPlugin
             if (list.Count == 0)
             {
                 FileLog.Write("config empty/missing, using defaults");
-                AddDefault(list, "https://22733.live.streamtheworld.com/OWR_INTERNATIONAL.mp3?dist=onlineradiobox", "One World Radio", "Tomorrowland", "Global electronic radio");
-                AddDefault(list, "https://stream-281.surfernetwork.com/ez4m4918n98uv", "NCS Radio", "NoCopyrightSounds", "");
             }
 
             FileLog.Write("total stations: " + list.Count);
@@ -272,18 +270,19 @@ namespace RadioStreamPlugin
     internal class RadioStreamer : IDisposable
     {
         readonly string _url;
-        readonly PcmRingBuffer _buffer;
         readonly object _stateLock = new object();
 
         Thread _thread;
-        volatile bool _disposed;
         volatile bool _started;
+        volatile object _token = new object();
+        volatile PcmRingBuffer _buffer;
+        HttpWebRequest _activeRequest;
 
         volatile int _lastReadAtTicks;
-        volatile bool _idleParked;
 
         const int IdleParkMs = 3000;
-        const int PrebufferSamples = 44100 * 2 * 12;
+        const int BufferSeconds = 5;
+        const int PrebufferSamples = 44100 * 2 * 3;
 
         public int SampleRate { get; private set; }
         public int Channels { get; private set; }
@@ -292,20 +291,24 @@ namespace RadioStreamPlugin
         public long DecodedSamples { get; private set; }
         public long PlayedSamples { get; private set; }
 
+        public bool IsRunning { get { lock (_stateLock) { return _started; } } }
+
+        public int LastReadAt { get { return _lastReadAtTicks; } }
+
         public int BufferedMilliseconds
         {
             get
             {
-                if (SampleRate <= 0 || Channels <= 0)
+                PcmRingBuffer b = _buffer;
+                if (SampleRate <= 0 || Channels <= 0 || b == null)
                     return 0;
-                return _buffer.Available / Channels * 1000 / SampleRate;
+                return b.Available / Channels * 1000 / SampleRate;
             }
         }
 
         public RadioStreamer(string url)
         {
             _url = url;
-            _buffer = new PcmRingBuffer(44100 * 2 * 30);
             _lastReadAtTicks = Environment.TickCount;
         }
 
@@ -318,13 +321,19 @@ namespace RadioStreamPlugin
             }
         }
 
-        public void Start()
+        public void EnsureStarted()
         {
             lock (_stateLock)
             {
-                if (_started || _disposed) return;
+                if (_started) return;
                 _started = true;
-                _thread = new Thread(DecodeLoop)
+                if (_buffer == null)
+                    _buffer = new PcmRingBuffer(44100 * 2 * BufferSeconds);
+                _lastReadAtTicks = Environment.TickCount;
+
+                var token = new object();
+                _token = token;
+                _thread = new Thread(() => DecodeLoop(token))
                 {
                     IsBackground = true,
                     Name = "RadioStream Decoder"
@@ -333,30 +342,76 @@ namespace RadioStreamPlugin
             }
         }
 
-        void DecodeLoop()
+        public void StopAndRelease()
         {
-            while (!_disposed)
+            PcmRingBuffer old;
+            lock (_stateLock)
             {
+                if (!_started) return;
+                _started = false;
+                _token = new object();
+                HttpWebRequest req = _activeRequest;
+                _activeRequest = null;
+                if (req != null) { try { req.Abort(); } catch { } }
+                old = _buffer;
+                _buffer = null;
+            }
+            old?.Clear();
+            lock (_stateLock)
+            {
+                _thread = null;
+                SampleRate = 0;
+                Channels = 0;
+                TotalSamples = 0;
+                DecodedSamples = 0;
+                PlayedSamples = 0;
+                LastError = null;
+            }
+        }
+
+        public void Dispose() { StopAndRelease(); }
+
+        void DecodeLoop(object token)
+        {
+            while (true)
+            {
+                if (!ReferenceEquals(token, _token)) return;
+
+                HttpWebRequest request = null;
                 try
                 {
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_url);
+                    request = (HttpWebRequest)WebRequest.Create(_url);
                     request.Method = "GET";
                     request.Timeout = 6000;
                     request.ReadWriteTimeout = 6000;
                     request.UserAgent = "Mozilla/5.0 (X11; Linux x86_64)";
                     request.Accept = "audio/mpeg,*/*";
 
+                    lock (_stateLock)
+                    {
+                        if (!ReferenceEquals(token, _token))
+                        {
+                            try { request.Abort(); } catch { }
+                            return;
+                        }
+                        _activeRequest = request;
+                    }
+
                     using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                     using (Stream stream = response.GetResponseStream())
                     {
+                        lock (_stateLock) { if (ReferenceEquals(_activeRequest, request)) _activeRequest = null; }
+                        if (!ReferenceEquals(token, _token)) return;
                         LastError = null;
-                        DecodeStream(stream);
+                        DecodeStream(stream, token);
                     }
                 }
                 catch (Exception ex)
                 {
+                    if (!ReferenceEquals(token, _token)) return;
                     LastError = ex.Message;
                     Debug.LogError("[RadioStream] stream error: " + ex.Message);
+                    try { if (request != null) request.Abort(); } catch { }
                     Thread.Sleep(500);
                 }
             }
@@ -364,17 +419,18 @@ namespace RadioStreamPlugin
 
         internal bool IsIdleParked()
         {
-            if (_buffer.Available < PrebufferSamples)
+            PcmRingBuffer b = _buffer;
+            if (b == null || b.Available < PrebufferSamples)
                 return false;
             int sinceRead = Environment.TickCount - _lastReadAtTicks;
             if (sinceRead < 0) sinceRead = 0;
-            _idleParked = sinceRead >= IdleParkMs;
-            return _idleParked;
+            return sinceRead >= IdleParkMs;
         }
 
-        void DecodeStream(Stream httpStream)
+        void DecodeStream(Stream httpStream, object token)
         {
             NLayer.MpegFile mpeg = null;
+            PcmRingBuffer buf = _buffer;
             try
             {
                 using (Stream fwd = new ForwardOnlyStream(httpStream))
@@ -393,9 +449,9 @@ namespace RadioStreamPlugin
 
                     int framesPerRead = 4096;
                     float[] chunk = new float[framesPerRead * ch];
-                    while (!_disposed)
+                    while (ReferenceEquals(token, _token))
                     {
-                        if (IsIdleParked())
+                        if (buf != null && IsIdleParked())
                         {
                             Thread.Sleep(100);
                             continue;
@@ -404,12 +460,12 @@ namespace RadioStreamPlugin
                         int read = info.ReadSamples(chunk, 0, chunk.Length);
                         if (read <= 0) {break;}
                         int n = (read / ch) * ch;
-                        if (n > 0)
+                        if (n > 0 && buf != null)
                         {
                             int writtenTotal = 0;
-                            while (writtenTotal < n && !_disposed)
+                            while (writtenTotal < n && ReferenceEquals(token, _token))
                             {
-                                int written = _buffer.Write(chunk, writtenTotal, n - writtenTotal);
+                                int written = buf.Write(chunk, writtenTotal, n - writtenTotal);
                                 writtenTotal += written;
                                 if (written == 0)
                                     Thread.Sleep(10);
@@ -423,6 +479,7 @@ namespace RadioStreamPlugin
             catch (ThreadAbortException) { }
             catch (Exception ex)
             {
+                if (!ReferenceEquals(token, _token)) return;
                 LastError = ex.Message;
                 Debug.LogError("[RadioStream] decode error: " + ex.Message);
             }
@@ -435,13 +492,15 @@ namespace RadioStreamPlugin
         public int ReadPcm(float[] data, int offset, int count)
         {
             _lastReadAtTicks = Environment.TickCount;
-            int read = _buffer.Read(data, offset, count);
+            EnsureStarted();
+            PcmRingBuffer b = _buffer;
+            if (b == null) return 0;
+            int read = b.Read(data, offset, count);
             PlayedSamples += read;
             return read;
         }
 
-        public void ClearBuffer() {_buffer.Clear();}
-        public void Dispose() {_disposed = true;}
+        public void ClearBuffer() { _buffer?.Clear(); }
     }
 
     internal class RadioInjector : MonoBehaviour
@@ -493,13 +552,13 @@ namespace RadioStreamPlugin
                 st.Streamer.SetFormat(44100, 2);
                 CreateClip(st);
                 RegisterItem(st);
-                st.Streamer.Start();
             }
 
             _bootstrapped = true;
             StartCoroutine(DebugStream());
+            StartCoroutine(Reap());
             Debug.Log("[RadioStream] " + _stations.Count + " stations registered");
-            FileLog.Write("Bootstrap DONE, " + _stations.Count + " stations started");
+            FileLog.Write("Bootstrap DONE, " + _stations.Count + " stations registered (streams start lazily)");
             yield break;
         }
 
@@ -553,12 +612,58 @@ namespace RadioStreamPlugin
 
                 StringBuilder sb = new StringBuilder();
                 sb.Append("status");
+                int run = 0;
                 for (int i = 0; i < _stations.Count; i++)
                 {
                     RadioStation st = _stations[i];
-                    sb.Append(" | ").Append(st.Title).Append(" decoded=").Append(st.Streamer?.DecodedSamples ?? 0).Append(" played=").Append(st.Streamer?.PlayedSamples ?? 0).Append(" buffered=").Append(st.Streamer?.BufferedMilliseconds ?? 0).Append("ms reads=").Append(st.Reads).Append(" idle=").Append(st.Streamer != null && st.Streamer.IsIdleParked()).Append(" err=").Append(st.Streamer?.LastError ?? "none");
+                    RadioStreamer s = st.Streamer;
+                    if (s == null || !s.IsRunning) continue;
+                    run++;
+                    sb.Append(" | ").Append(st.Title).Append(" running decoded=").Append(s.DecodedSamples).Append(" played=").Append(s.PlayedSamples).Append(" buffered=").Append(s.BufferedMilliseconds).Append("ms idle=").Append(s.IsIdleParked()).Append(" err=").Append(s.LastError ?? "none");
                 }
+                sb.Insert(6, " running=" + run);
                 FileLog.Write(sb.ToString());
+            }
+        }
+
+        const int IdleTeardownMs = 20000;
+
+        IEnumerator Reap()
+        {
+            while (_instance != null && _stations != null)
+            {
+                yield return new WaitForSeconds(5f);
+                try { ReapIdle(); }
+                catch (Exception ex) { FileLog.Write("reap error: " + ex.Message); }
+            }
+        }
+
+        void ReapIdle()
+        {
+            if (_stations == null) return;
+
+            RadioStreamer warm = null;
+            int freshest = int.MinValue;
+            foreach (RadioStation s in _stations)
+            {
+                RadioStreamer st = s.Streamer;
+                if (st == null || !st.IsRunning) continue;
+                int lr = st.LastReadAt;
+                if (lr > freshest) { freshest = lr; warm = st; }
+            }
+
+            int now = Environment.TickCount;
+            foreach (RadioStation s in _stations)
+            {
+                RadioStreamer st = s.Streamer;
+                if (st == null || !st.IsRunning || ReferenceEquals(st, warm)) continue;
+                int since = now - st.LastReadAt;
+                if (since < 0) since = 0;
+                if (since > IdleTeardownMs)
+                {
+                    st.StopAndRelease();
+                    FileLog.Write("idle stream released: " + s.Title);
+                }
             }
         }
 
