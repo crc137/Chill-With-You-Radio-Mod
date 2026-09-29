@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/coonlink">
-    <img width="90px" src="logo.png" alt="Logo" />
+    <img width="90px" src="https://raw.coonlink.com/cloud/Chill%20with%20You%20Lo-Fi%20Story.png" alt="Logo" />
   </a>
   <h1>Chill with You : Lo-Fi Story — Мод «Радио»</h1>
 
@@ -10,7 +10,8 @@
 <img alt="last-commit" src="https://img.shields.io/github/last-commit/crc137/Chill-With-You-Radio-Mod?style=flat&amp;logo=git&amp;logoColor=white&amp;color=0080ff" style="margin: 0px 2px;">
 <img alt="repo-top-language" src="https://img.shields.io/github/languages/top/crc137/Chill-With-You-Radio-Mod?style=flat&amp;color=0080ff" style="margin: 0px 2px;">
 <img alt="repo-language-count" src="https://img.shields.io/github/languages/count/crc137/Chill-With-You-Radio-Mod?style=flat&amp;color=0080ff" style="margin: 0px 2px;">
-<img alt="version" src="https://img.shields.io/badge/version-26.1.2-blue" style="margin: 0px 2px;">
+<img alt="version" src="https://img.shields.io/badge/version-26.1.3-blue" style="margin: 0px 2px;">
+<img alt="status" src="https://img.shields.io/badge/status-STABLE-green" style="margin: 0px 2px;">
 </div>
 
 <br />
@@ -29,6 +30,16 @@
    (установщик ставит его автоматически, если его нет — например, после переустановки игры).
 3. Файлы плагина `RadioStreamPlugin.dll` и `NLayer.dll` (этот мод).
 4. Интернет (радио играет вживую из сети).
+
+
+## Скачать
+
+Готовый к запуску zip выложен **только** в GitHub Releases:
+
+👉 [github.com/crc137/Chill-With-You-Radio-Mod/releases](https://github.com/crc137/Chill-With-You-Radio-Mod/releases)
+
+Берите `ChillWithYou-RadioMod-v26.1.3-Linux-Windows.zip`. В самом репозитории —
+только исходники, установщики и списки станций, без бинарников.
 
 
 
@@ -58,6 +69,19 @@
    ```
 4. Запустите игру, откройте меню музыки и переключайте станции клавишами **J / K**.
 
+### Проверка станций (по желанию)
+
+Радиостанции в интернете живут недолго, а декодер мода умеет только MP3/MPEG.
+В архиве есть валидатор: он опрашивает все станции так же, как мод, и оставляет
+только реально играющие. Запустите **до** установки своего списка:
+
+- **Windows:** двойной клик по `checkstations.bat`
+- **Linux / Steam Deck:** `./checkstations.sh`
+
+Результат — `radiostations.checked.txt` (рабочие) и `radiostations.checked.skipped.txt`
+(отброшенные с причиной). Скопируйте рабочий список в `BepInEx/plugins/radiostations.txt`.
+Если станция падает с ошибкой TLS — её не поддержит рантайм игры, выбросьте.
+
 Если файла со станциями нет — плагин использует стандартные. Если после переустановки игры пропал BepInEx — запустите `install.sh` / `install.bat`, он поставит его автоматически.
 
 
@@ -77,7 +101,7 @@ http://example.com/lofi.mp3|Lo-Fi Beats
 http://example.com/jazz.pls|Jazz Radio
 ```
 
-Измените файл и **перезапустите игру** — новые станции подхватятся. Радио играет только если адрес станции доступен (для некоторых `.pls`/`.m3u` нужен браузер — лучше вставлять прямые ссылки на `.mp3`/`.aac`).
+Измените файл и **перезапустите игру** — новые станции подхватятся. Радио играет только если адрес доступен и отдаёт MP3/MPEG — декодер (NLayer) умеет только MP3/MPEG (не AAC/OGG). Лучше вставлять прямые ссылки на `.mp3`.
 
 
 

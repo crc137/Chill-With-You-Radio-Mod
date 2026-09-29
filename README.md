@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/coonlink">
-    <img width="90px" src="logo.png" alt="Logo" />
+    <img width="90px" src="https://raw.coonlink.com/cloud/Chill%20with%20You%20Lo-Fi%20Story.png" alt="Logo" />
   </a>
   <h1>Chill with You : Lo-Fi Story — Radio Mod</h1>
 
@@ -10,7 +10,8 @@
 <img alt="last-commit" src="https://img.shields.io/github/last-commit/crc137/Chill-With-You-Radio-Mod?style=flat&amp;logo=git&amp;logoColor=white&amp;color=0080ff" style="margin: 0px 2px;">
 <img alt="repo-top-language" src="https://img.shields.io/github/languages/top/crc137/Chill-With-You-Radio-Mod?style=flat&amp;color=0080ff" style="margin: 0px 2px;">
 <img alt="repo-language-count" src="https://img.shields.io/github/languages/count/crc137/Chill-With-You-Radio-Mod?style=flat&amp;color=0080ff" style="margin: 0px 2px;">
-<img alt="version" src="https://img.shields.io/badge/version-26.1.2-blue" style="margin: 0px 2px;">
+<img alt="version" src="https://img.shields.io/badge/version-26.1.3-blue" style="margin: 0px 2px;">
+<img alt="status" src="https://img.shields.io/badge/status-STABLE-green" style="margin: 0px 2px;">
 </div>
 
 <br />
@@ -28,6 +29,16 @@ For the radio to work you need **all** of these:
    (the installer installs it automatically if it's missing, e.g. after a Steam reinstall).
 3. The plugin files `RadioStreamPlugin.dll` and `NLayer.dll` (this mod).
 4. Internet connection (radio streams are live online).
+
+
+## Download
+
+The ready-to-play zip is published **only** on GitHub Releases:
+
+👉 [github.com/crc137/Chill-With-You-Radio-Mod/releases](https://github.com/crc137/Chill-With-You-Radio-Mod/releases)
+
+Pick `ChillWithYou-RadioMod-v26.1.3-Linux-Windows.zip`. The repo itself keeps
+source, installers and station lists only — no binaries.
 
 
 ## How to install (player, no build needed)
@@ -56,6 +67,19 @@ The installer finds the game in **any Steam library** (including non-default and
    ```
 4. Launch the game. In the music menu, switch stations with **J / K**.
 
+### Validate stations (optional)
+
+Internet radio stations die often, and this mod's decoder (NLayer) only plays
+MP3/MPEG. The package includes a checker that probes every station the same way
+the mod connects and keeps only the ones that actually play:
+
+- **Windows:** double-click `checkstations.bat`
+- **Linux / Steam Deck:** `./checkstations.sh`
+
+Result: `radiostations.checked.txt` (working) and `radiostations.checked.skipped.txt`
+(dropped with the reason). Copy the checked list to `BepInEx/plugins/radiostations.txt`.
+If a station fails with a TLS error, the game's runtime can't play it — drop it.
+
 If the station list is missing, the plugin uses a default one. If BepInEx is missing after a reinstall, run `install.sh` / `install.bat` — it will install BepInEx for you.
 
 
@@ -75,7 +99,7 @@ http://example.com/lofi.mp3|Lo-Fi Beats
 http://example.com/jazz.pls|Jazz Radio
 ```
 
-Edit the file, then **restart the game** for changes to apply. Stations play only if the URL is reachable (some `.pls`/`.m3u` links need the browser first — prefer direct `.mp3`/`.aac` links).
+Edit the file, then **restart the game** for changes to apply. Stations play only if the URL is reachable and sends MP3/MPEG — the decoder (NLayer) plays MP3/MPEG only (no AAC/OGG). Prefer direct `.mp3` stream links.
 
 
 
